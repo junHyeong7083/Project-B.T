@@ -1,4 +1,5 @@
 using System;
+using CardBullet.Core.Deck;
 using UnityEngine;
 
 namespace CardBullet.Core.Battle
@@ -13,7 +14,10 @@ namespace CardBullet.Core.Battle
         [SerializeField] private float hpThreshold = 0.1f; // 10% 이하
 
         [Header("참조")]
-        [SerializeField] private ResourceManager playerResources;
+        [SerializeField] private HealthManager playerHealth;
+        [SerializeField] private HealthManager enemyHealth;
+        [SerializeField] private APManager playerAP;
+        [SerializeField] private DeckManager deckManager;
         
         // 이벤트
         public event Action<int, RaiseResult> OnRaiseExecuted;
@@ -31,11 +35,16 @@ namespace CardBullet.Core.Battle
         /// <summary>
         /// 레이즈 발동 가능 여부 체크
         /// 조건: PC HP < 10% AND Current AP == 0
+        /// SRP: 레이즈 발동 조건 체크만 담당
         /// </summary>
-        public bool CheckRaiseAvailability(float currentHP, float maxHP)
+        public bool CheckRaiseAvailability()
         {
-            bool hpCondition = (currentHP / maxHP) < hpThreshold;
-            bool apCondition = playerResources.GetCurrentAP() == 0;
+            if (playerHealth == null || playerAP == null)
+                return false;
+
+            float hpRatio = playerHealth.GetHPRatio();
+            bool hpCondition = hpRatio < hpThreshold;
+            bool apCondition = playerAP.GetCurrentAP() == 0;
 
             bool wasAvailable = isRaiseAvailable;
             isRaiseAvailable = hpCondition && apCondition;
@@ -51,7 +60,7 @@ namespace CardBullet.Core.Battle
         /// <summary>
         /// 레이즈 실행
         /// </summary>
-        public RaiseResult ExecuteRaise(float playerHP, float enemyHP, float playerMaxHP)
+        public RaiseResult ExecuteRaise()
         {
             if (!isRaiseAvailable)
             {
@@ -64,7 +73,7 @@ namespace CardBullet.Core.Battle
             RaiseResult result = GetRaiseResult(diceRoll);
 
             // 결과 적용
-            ApplyRaiseResult(result, playerHP, enemyHP, playerMaxHP);
+            ApplyRaiseResult(result);
 
             OnRaiseExecuted?.Invoke(diceRoll, result);
             isRaiseAvailable = false;
@@ -95,29 +104,38 @@ namespace CardBullet.Core.Battle
 
         /// <summary>
         /// 레이즈 결과 적용
+        /// SRP: 레이즈 효과 적용만 담당
         /// </summary>
-        private void ApplyRaiseResult(RaiseResult result, float playerHP, float enemyHP, float playerMaxHP)
+        private void ApplyRaiseResult(RaiseResult result)
         {
             switch (result)
             {
                 case RaiseResult.AverageHP:
                     // 기획서: (PC_HP + NPC_HP) / 2 값으로 쌍방 체력 동기화
-                    float averageHP = (playerHP + enemyHP) / 2f;
-                    // TODO: 실제 체력 적용은 BattleManager에서 처리
-                    Debug.Log($"[레이즈 {result}] 체력 평균화: {averageHP}");
+                    if (playerHealth != null && enemyHealth != null)
+                    {
+                        float averageHP = (playerHealth.GetCurrentHP() + enemyHealth.GetCurrentHP()) / 2f;
+                        playerHealth.SetHP(Mathf.RoundToInt(averageHP));
+                        enemyHealth.SetHP(Mathf.RoundToInt(averageHP));
+                    }
+                    Debug.Log($"[레이즈 {result}] 체력 평균화");
                     break;
 
                 case RaiseResult.FullHealStun:
                     // 기획서: PC HP 100% 회복 + 1턴 행동 불능(스턴)
+                    if (playerHealth != null)
+                    {
+                        playerHealth.FullHeal();
+                    }
+                    // TODO: 스턴 효과는 TurnManager나 별도 시스템에서 처리
                     Debug.Log($"[레이즈 {result}] 완전 회복 + 1턴 스턴");
-                    // TODO: 실제 체력 회복 및 스턴 적용은 BattleManager에서 처리
                     break;
 
                 case RaiseResult.FullDrawRecover:
                     // 기획서: 손패 풀 드로우 + AP 완전 회복
-                    playerResources.FullRestoreAP();
+                    playerAP?.FullRestoreAP();
+                    deckManager?.FullDraw();
                     Debug.Log($"[레이즈 {result}] 풀 드로우 + AP 완전 회복");
-                    // TODO: 풀 드로우는 DeckManager에서 처리
                     break;
             }
         }

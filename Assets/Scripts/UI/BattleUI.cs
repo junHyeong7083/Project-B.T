@@ -17,8 +17,11 @@ namespace CardBullet.UI
     {
         [Header("시스템 참조")]
         [SerializeField] private BattleManager battleManager;
-        [SerializeField] private ResourceManager playerResources;
-        [SerializeField] private ResourceManager enemyResources;
+        [SerializeField] private APManager playerAP;
+        [SerializeField] private TCManager playerTC;
+        [SerializeField] private TCManager enemyTC;
+        [SerializeField] private HealthManager playerHealth;
+        [SerializeField] private HealthManager enemyHealth;
         [SerializeField] private TurnManager turnManager;
         [SerializeField] private DeckManager deckManager;
         [SerializeField] private HandManager handManager;
@@ -58,21 +61,29 @@ namespace CardBullet.UI
         private void OnEnable()
         {
             // 이벤트 구독
-            if (playerResources != null)
+            if (playerAP != null)
             {
-                playerResources.OnAPChanged += UpdateAPDisplay;
-                playerResources.OnTCChanged += UpdateTCTimeline;
+                playerAP.OnAPChanged += UpdateAPDisplay;
             }
 
-            if (enemyResources != null)
+            if (playerTC != null)
             {
-                enemyResources.OnTCChanged += UpdateTCTimeline;
+                playerTC.OnTCChanged += _ => UpdateTCTimeline(0);
             }
 
-            if (battleManager != null)
+            if (enemyTC != null)
             {
-                battleManager.OnPlayerHPChanged += UpdatePlayerHP;
-                battleManager.OnEnemyHPChanged += UpdateEnemyHP;
+                enemyTC.OnTCChanged += _ => UpdateTCTimeline(0);
+            }
+
+            if (playerHealth != null)
+            {
+                playerHealth.OnHPChanged += UpdatePlayerHP;
+            }
+
+            if (enemyHealth != null)
+            {
+                enemyHealth.OnHPChanged += UpdateEnemyHP;
             }
 
             if (raiseSystem != null)
@@ -94,21 +105,29 @@ namespace CardBullet.UI
         private void OnDisable()
         {
             // 이벤트 해제
-            if (playerResources != null)
+            if (playerAP != null)
             {
-                playerResources.OnAPChanged -= UpdateAPDisplay;
-                playerResources.OnTCChanged -= UpdateTCTimeline;
+                playerAP.OnAPChanged -= UpdateAPDisplay;
             }
 
-            if (enemyResources != null)
+            if (playerTC != null)
             {
-                enemyResources.OnTCChanged -= UpdateTCTimeline;
+                playerTC.OnTCChanged -= _ => UpdateTCTimeline(0);
             }
 
-            if (battleManager != null)
+            if (enemyTC != null)
             {
-                battleManager.OnPlayerHPChanged -= UpdatePlayerHP;
-                battleManager.OnEnemyHPChanged -= UpdateEnemyHP;
+                enemyTC.OnTCChanged -= _ => UpdateTCTimeline(0);
+            }
+
+            if (playerHealth != null)
+            {
+                playerHealth.OnHPChanged -= UpdatePlayerHP;
+            }
+
+            if (enemyHealth != null)
+            {
+                enemyHealth.OnHPChanged -= UpdateEnemyHP;
             }
 
             if (raiseSystem != null)
@@ -137,10 +156,10 @@ namespace CardBullet.UI
         /// </summary>
         private void InitializeUI()
         {
-            UpdateAPDisplay(playerResources != null ? playerResources.GetCurrentAP() : 0);
+            UpdateAPDisplay(playerAP != null ? playerAP.GetCurrentAP() : 0);
             UpdateTCTimeline(0);
-            UpdatePlayerHP(battleManager != null ? battleManager.GetPlayerHP() : 100);
-            UpdateEnemyHP(battleManager != null ? battleManager.GetEnemyHP() : 100);
+            UpdatePlayerHP(playerHealth != null ? playerHealth.GetCurrentHP() : 100);
+            UpdateEnemyHP(enemyHealth != null ? enemyHealth.GetCurrentHP() : 100);
             UpdateRaiseButton(false);
 
             if (patternNotification != null)
@@ -159,7 +178,7 @@ namespace CardBullet.UI
         {
             if (apText != null)
             {
-                int maxAP = playerResources != null ? playerResources.GetMaxAP() : 3;
+                int maxAP = playerAP != null ? playerAP.GetMaxAP() : 3;
                 apText.text = $"AP: {currentAP}/{maxAP}";
             }
         }
@@ -170,25 +189,25 @@ namespace CardBullet.UI
         /// </summary>
         private void UpdateTCTimeline(int tc)
         {
-            if (playerResources == null || enemyResources == null)
+            if (playerTC == null || enemyTC == null)
                 return;
 
-            int playerTC = playerResources.GetCurrentTC();
-            int enemyTC = enemyResources.GetCurrentTC();
+            int playerTCValue = playerTC.GetCurrentTC();
+            int enemyTCValue = enemyTC.GetCurrentTC();
 
             // TC 텍스트 업데이트
             if (playerTCText != null)
-                playerTCText.text = $"플레이어 TC: {playerTC}";
+                playerTCText.text = $"플레이어 TC: {playerTCValue}";
 
             if (enemyTCText != null)
-                enemyTCText.text = $"적 TC: {enemyTC}";
+                enemyTCText.text = $"적 TC: {enemyTCValue}";
 
             // TC 타임라인 바 업데이트
             if (tcTimelineBar != null)
             {
-                int maxTC = Mathf.Max(playerTC, enemyTC, 100); // 최소 100으로 설정
-                float normalizedPlayerTC = (float)playerTC / maxTC;
-                float normalizedEnemyTC = (float)enemyTC / maxTC;
+                int maxTC = Mathf.Max(playerTCValue, enemyTCValue, 100); // 최소 100으로 설정
+                float normalizedPlayerTC = (float)playerTCValue / maxTC;
+                float normalizedEnemyTC = (float)enemyTCValue / maxTC;
 
                 // 타임라인 바 전체 길이
                 float barWidth = tcTimelineBar.GetComponent<RectTransform>().rect.width;
@@ -217,10 +236,10 @@ namespace CardBullet.UI
         /// </summary>
         private void UpdatePlayerHP(int currentHP)
         {
-            if (battleManager == null)
+            if (playerHealth == null)
                 return;
 
-            int maxHP = battleManager.GetPlayerMaxHP();
+            int maxHP = playerHealth.GetMaxHP();
             float hpRatio = (float)currentHP / maxHP;
 
             if (playerHPBar != null)
@@ -232,7 +251,7 @@ namespace CardBullet.UI
             // 레이즈 가능 여부 체크
             if (raiseSystem != null)
             {
-                raiseSystem.CheckRaiseAvailability(currentHP, maxHP);
+                raiseSystem.CheckRaiseAvailability();
             }
         }
 
@@ -241,10 +260,10 @@ namespace CardBullet.UI
         /// </summary>
         private void UpdateEnemyHP(int currentHP)
         {
-            if (battleManager == null)
+            if (enemyHealth == null)
                 return;
 
-            int maxHP = battleManager.GetEnemyMaxHP();
+            int maxHP = enemyHealth.GetMaxHP();
             float hpRatio = (float)currentHP / maxHP;
 
             if (enemyHPBar != null)
@@ -272,14 +291,10 @@ namespace CardBullet.UI
         /// </summary>
         private void OnRaiseButtonClicked()
         {
-            if (battleManager == null || raiseSystem == null)
+            if (raiseSystem == null)
                 return;
 
-            float playerHP = battleManager.GetPlayerHP();
-            float enemyHP = battleManager.GetEnemyHP();
-            float playerMaxHP = battleManager.GetPlayerMaxHP();
-
-            var result = raiseSystem.ExecuteRaise(playerHP, enemyHP, playerMaxHP);
+            var result = raiseSystem.ExecuteRaise();
             Debug.Log($"레이즈 발동! 결과: {result}");
 
             // 턴 강제 종료
